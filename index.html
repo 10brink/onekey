@@ -1,0 +1,111 @@
+<!--
+  index.html - One-Key Orchestra main game page
+
+  A browser-based musical game where pressing spacebar creates music.
+  Timing relative to the beat determines which instrument plays.
+-->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>One-Key Orchestra</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Home Button -->
+    <button id="homeButton" class="hidden">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+        </svg>
+    </button>
+
+    <!-- Pause Button -->
+    <button id="pauseButton" class="hidden">
+        <svg class="play-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+        </svg>
+        <svg class="pause-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+        </svg>
+    </button>
+
+    <!-- Start Screen Overlay -->
+    <div id="startScreen">
+        <div class="start-content">
+            <h1>One-Key Orchestra</h1>
+            <p class="tagline">Create music with a single key</p>
+
+            <div class="instructions">
+                <div class="instruction-item">
+                    <span class="key">SPACE</span>
+                    <span>Press on the beat to play</span>
+                </div>
+                <div class="instruction-item">
+                    <span class="key">HOLD</span>
+                    <span>Hold longer for sustained notes</span>
+                </div>
+            </div>
+
+            <div class="beat-preview">
+                <div class="beat-dot" style="--color: #64b5f6">
+                    <span class="beat-label">1</span>
+                    <span class="beat-name">Melody</span>
+                </div>
+                <div class="beat-dot" style="--color: #ba68c8">
+                    <span class="beat-label">2</span>
+                    <span class="beat-name">Pad</span>
+                </div>
+                <div class="beat-dot" style="--color: #d4a574">
+                    <span class="beat-label">3</span>
+                    <span class="beat-name">Bass</span>
+                </div>
+                <div class="beat-dot" style="--color: #ef5350">
+                    <span class="beat-label">4</span>
+                    <span class="beat-name">Perc</span>
+                </div>
+            </div>
+
+            <div class="genre-selector">
+                <p class="selector-label">SELECT VIBE</p>
+                <div class="genre-options">
+                    <button class="genre-btn active" data-genre="pop">
+                        <span class="genre-name">Pop</span>
+                        <span class="genre-bpm">100 BPM</span>
+                    </button>
+                    <button class="genre-btn" data-genre="lofi">
+                        <span class="genre-name">Lo-Fi</span>
+                        <span class="genre-bpm">75 BPM</span>
+                    </button>
+                    <button class="genre-btn" data-genre="house">
+                        <span class="genre-name">House</span>
+                        <span class="genre-bpm">128 BPM</span>
+                    </button>
+                </div>
+            </div>
+
+            <p class="hint">Off-beat hits create dissonance — embrace the chaos!</p>
+
+            <button id="startButton">
+                <span>Start Playing</span>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                </svg>
+            </button>
+
+            <p class="mobile-hint">Tap anywhere to start</p>
+        </div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+
+</html>

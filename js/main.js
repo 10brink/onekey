@@ -43,11 +43,17 @@ class Game {
             this.startGame();
         });
 
-        // Also start on any keypress from start screen
+        // Consolidated keyboard handler for start screen and pause
         document.addEventListener('keydown', (e) => {
+            // Start game from start screen
             if (!this.isPlaying && (e.code === 'Space' || e.code === 'Enter')) {
                 e.preventDefault();
                 this.startGame();
+                return;
+            }
+            // Pause/unpause during gameplay
+            if (e.code === 'Escape' && this.isPlaying) {
+                this.togglePause();
             }
         });
 
@@ -90,13 +96,6 @@ class Game {
 
         // Home button
         this.homeButton.addEventListener('click', () => this.goHome());
-
-        // Escape key updates
-        document.addEventListener('keydown', (e) => {
-            if (e.code === 'Escape' && this.isPlaying) {
-                this.togglePause();
-            }
-        });
 
         // Note start callback
         this.inputHandler.onNoteStart = (timestamp) => {

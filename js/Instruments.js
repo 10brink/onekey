@@ -65,10 +65,10 @@ export const INSTRUMENTS = {
 };
 
 // Equal temperament semitone ratio
-const SEMITONE = Math.pow(2, 1 / 12);
+export const SEMITONE = Math.pow(2, 1 / 12);
 
 // Helper: semitones from root to frequency multiplier
-const st = (n) => Math.pow(SEMITONE, n);
+export const st = (n) => Math.pow(SEMITONE, n);
 
 // Chord progressions - I-vi-IV-V in equal temperament
 // All values are semitone offsets converted to frequency multipliers

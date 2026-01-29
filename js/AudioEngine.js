@@ -6,7 +6,7 @@
  * layering together to build a complete beat.
  */
 
-import { getInstrumentByBeat, getChordForBar } from './Instruments.js';
+import { getInstrumentByBeat, getChordForBar, INSTRUMENTS } from './Instruments.js';
 import { getGenre, GENRES } from './Genres.js';
 
 export class AudioEngine {
@@ -34,7 +34,16 @@ export class AudioEngine {
     async initialize() {
         if (this.isInitialized) return;
 
-        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) {
+                throw new Error('Web Audio API not supported in this browser');
+            }
+            this.ctx = new AudioContextClass();
+        } catch (error) {
+            console.error('Failed to create AudioContext:', error);
+            throw new Error('Audio initialization failed. Please use a modern browser with Web Audio support.');
+        }
 
         // Compressor for glue and punch
         this.compressor = this.ctx.createDynamicsCompressor();
@@ -84,6 +93,31 @@ export class AudioEngine {
     setBPM(bpm) {
         this.bpm = bpm;
         this.beatDuration = 60 / bpm;
+    }
+
+    /**
+     * Apply ADSR envelope to a gain node
+     * @param {GainNode} gainNode - The gain node to apply envelope to
+     * @param {number} startTime - When to start the envelope (audio context time)
+     * @param {number} duration - Total note duration in seconds
+     * @param {object} envelope - ADSR values { attack, decay, sustain, release }
+     * @param {number} peakGain - Maximum gain value (default 1.0)
+     */
+    applyADSREnvelope(gainNode, startTime, duration, envelope, peakGain = 1.0) {
+        const { attack, decay, sustain, release } = envelope;
+
+        // Clamp sustain duration to available time
+        const sustainTime = Math.max(0, duration - attack - decay - release);
+
+        gainNode.gain.setValueAtTime(0, startTime);
+        // Attack
+        gainNode.gain.linearRampToValueAtTime(peakGain, startTime + attack);
+        // Decay to sustain level
+        gainNode.gain.linearRampToValueAtTime(peakGain * sustain, startTime + attack + decay);
+        // Hold sustain
+        gainNode.gain.setValueAtTime(peakGain * sustain, startTime + attack + decay + sustainTime);
+        // Release
+        gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
     }
 
     setGenre(genreId) {
@@ -197,8 +231,52 @@ export class AudioEngine {
                 shaper.connect(gain);
                 gain.connect(this.masterGain);
 
+            } else if (style === 'mellow') {
+                // Lo-fi Mellow Bass: Softer, rounder, less punchy
+                const osc = this.ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(noteFreq, hitTime);
+
+                // Sub bass (one octave down) - quieter for mellow feel
+                const sub = this.ctx.createOscillator();
+                sub.type = 'sine';
+                sub.frequency.setValueAtTime(noteFreq / 2, hitTime);
+
+                // No pitch drop - keeps it smooth and lazy
+
+                // Gain envelope - softer attack, longer sustain
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0, hitTime);
+                gain.gain.linearRampToValueAtTime(0.45, hitTime + 0.08); // Slower attack
+                gain.gain.setValueAtTime(0.4, hitTime + noteDuration - 0.2);
+                gain.gain.exponentialRampToValueAtTime(0.01, hitTime + noteDuration);
+
+                const subGain = this.ctx.createGain();
+                subGain.gain.setValueAtTime(0, hitTime);
+                subGain.gain.linearRampToValueAtTime(0.35, hitTime + 0.1);
+                subGain.gain.setValueAtTime(0.3, hitTime + noteDuration - 0.2);
+                subGain.gain.exponentialRampToValueAtTime(0.01, hitTime + noteDuration);
+
+                // Darker lowpass filter for warmer, rounder tone
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 150; // Darker than 808
+                filter.Q.value = 0.7;
+
+                osc.connect(filter);
+                sub.connect(subGain);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+                subGain.connect(this.masterGain);
+
+                osc.start(hitTime);
+                sub.start(hitTime);
+                osc.stop(hitTime + noteDuration + 0.1);
+                sub.stop(hitTime + noteDuration + 0.1);
+
+                sources.push(osc, sub);
             } else {
-                // Default 808 Style
+                // Default 808 Style (punchy)
                 // Main bass oscillator
                 const osc = this.ctx.createOscillator();
                 osc.type = 'sine';
@@ -248,16 +326,16 @@ export class AudioEngine {
         }
 
         this.activeLoops.set(3, { // Beat 3 = Bass
-            stop: () => sources.forEach(s => { try { s.stop(); } catch (e) { } })
+            stop: () => sources.forEach(s => { try { s.stop(); } catch (e) { /* oscillator already stopped */ } })
         });
     }
 
     // Melody: Warm pop synth lead or vocal chop style
     playMelodyLoop(freq, isDissonant) {
         const now = this.ctx.currentTime;
-        const measureDuration = this.beatDuration * 4;
         const style = this.genre ? this.genre.melodyStyle : 'pop';
         const sources = [];
+        const melodyEnvelope = INSTRUMENTS.melody.envelope;
 
         // Equal temperament semitone ratio
         const st = (n) => Math.pow(Math.pow(2, 1 / 12), n);
@@ -308,8 +386,47 @@ export class AudioEngine {
                 osc.stop(hitTime + noteDuration + 0.1);
                 sources.push(osc);
 
+            } else if (style === 'lofi') {
+                // Lo-fi melody: Soft, muted keys with tape saturation feel
+                const osc = this.ctx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.value = noteFreq;
+                // Slight random pitch variation for lo-fi imperfection
+                osc.detune.value = (Math.random() - 0.5) * 15;
+
+                // Second oscillator slightly detuned for warmth
+                const osc2 = this.ctx.createOscillator();
+                osc2.type = 'sine';
+                osc2.frequency.value = noteFreq;
+                osc2.detune.value = -8 + (Math.random() - 0.5) * 10;
+
+                // Darker, muffled filter
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 1800; // Rolled off highs
+                filter.Q.value = 0.8;
+
+                // Softer envelope
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0, hitTime);
+                gain.gain.linearRampToValueAtTime(0.09 * velocity, hitTime + 0.03);
+                gain.gain.exponentialRampToValueAtTime(0.06 * velocity, hitTime + 0.15);
+                gain.gain.exponentialRampToValueAtTime(0.01, hitTime + noteDuration + 0.1);
+
+                osc.connect(filter);
+                osc2.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+                gain.connect(this.reverb);
+
+                osc.start(hitTime);
+                osc2.start(hitTime);
+                osc.stop(hitTime + noteDuration + 0.15);
+                osc2.stop(hitTime + noteDuration + 0.15);
+                sources.push(osc, osc2);
+
             } else {
-                // Pop Style (Default)
+                // Pop Style (Default) - uses ADSR envelope from instrument definition
                 // Two detuned oscillators
                 const oscs = [];
                 const detuneAmounts = [-6, 6];
@@ -323,10 +440,8 @@ export class AudioEngine {
                 }
 
                 const gain = this.ctx.createGain();
-                gain.gain.setValueAtTime(0, hitTime);
-                gain.gain.linearRampToValueAtTime(0.12 * velocity, hitTime + 0.02);
-                gain.gain.exponentialRampToValueAtTime(0.08 * velocity, hitTime + 0.1);
-                gain.gain.exponentialRampToValueAtTime(0.01, hitTime + noteDuration);
+                // Use ADSR envelope with velocity scaling
+                this.applyADSREnvelope(gain, hitTime, noteDuration, melodyEnvelope, 0.12 * velocity);
 
                 const filter = this.ctx.createBiquadFilter();
                 filter.type = 'lowpass';
@@ -348,7 +463,7 @@ export class AudioEngine {
         }
 
         this.activeLoops.set(1, { // Beat 1 = Melody
-            stop: () => sources.forEach(s => { try { s.stop(); } catch (e) { } })
+            stop: () => sources.forEach(s => { try { s.stop(); } catch (e) { /* oscillator already stopped */ } })
         });
     }
 
@@ -358,6 +473,7 @@ export class AudioEngine {
         const measureDuration = this.beatDuration * 4;
         const style = this.genre ? this.genre.padStyle : 'warm';
         const sources = [];
+        const padEnvelope = INSTRUMENTS.pad.envelope;
 
         // Equal temperament semitone ratio
         const st = (n) => Math.pow(Math.pow(2, 1 / 12), n);
@@ -375,35 +491,60 @@ export class AudioEngine {
             masterGain.gain.linearRampToValueAtTime(0.18, now + 1.5); // Very slow attack like a breath
             masterGain.gain.setValueAtTime(0.18, now + measureDuration - 0.2);
             masterGain.gain.linearRampToValueAtTime(0, now + measureDuration + 0.5); // Long tail
-        } else {
-            // Default warm pad
+        } else if (style === 'tape') {
+            // Lo-fi Tape Pad: Warmer, with subtle wobble/saturation feel
             masterGain.gain.setValueAtTime(0, now);
-            masterGain.gain.linearRampToValueAtTime(0.15, now + 0.3);
-            masterGain.gain.setValueAtTime(0.15, now + measureDuration - 0.5);
-            masterGain.gain.linearRampToValueAtTime(0, now + measureDuration);
+            masterGain.gain.linearRampToValueAtTime(0.12, now + 0.4); // Slower attack
+            masterGain.gain.setValueAtTime(0.12, now + measureDuration - 0.3);
+            masterGain.gain.linearRampToValueAtTime(0, now + measureDuration + 0.2);
+        } else {
+            // Default warm pad - use ADSR envelope from instrument definition
+            this.applyADSREnvelope(masterGain, now, measureDuration, padEnvelope, 0.15);
         }
 
         // Filter setup
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        // Emotional style has brighter, opening filter
-        filter.frequency.value = style === 'emotional' ? 800 : 2000;
+        // Style-specific filter settings
         if (style === 'emotional') {
+            filter.frequency.value = 800;
             filter.frequency.linearRampToValueAtTime(2500, now + measureDuration); // Filter opens up
+        } else if (style === 'tape') {
+            // Lo-fi tape: darker, more muffled with slight resonance
+            filter.frequency.value = 1200;
+            filter.Q.value = 1.5; // Slight resonance for vinyl warmth
+        } else {
+            filter.frequency.value = 2000;
         }
-        filter.Q.value = 0.5;
+        if (style !== 'tape') {
+            filter.Q.value = 0.5;
+        }
 
         for (const mult of chord) {
             // Multiple detuned oscillators per note for lushness
             for (let d = -1; d <= 1; d++) {
                 const osc = this.ctx.createOscillator();
                 osc.type = 'sine'; // Sines are cleaner for emotional layering
-                // For emotional style, add some saw layer for texture?
+                // For emotional style, add some triangle layer for texture
                 if (style === 'emotional' && d === 0) osc.type = 'triangle';
 
                 osc.frequency.value = freq * mult;
-                const drift = style === 'emotional' ? 6 : 4;
-                osc.detune.value = d * 8 + (Math.random() - 0.5) * drift;
+                let drift;
+                if (style === 'tape') {
+                    // Lo-fi tape: more pitch wobble for that vinyl/cassette feel
+                    drift = 10;
+                    // Add slow LFO-style pitch wobble
+                    const wobbleAmount = 3 + Math.random() * 4;
+                    const wobbleRate = 0.3 + Math.random() * 0.4;
+                    // Schedule subtle pitch variations
+                    for (let t = 0; t < measureDuration; t += 0.5) {
+                        const wobble = Math.sin(t * wobbleRate * Math.PI * 2) * wobbleAmount;
+                        osc.detune.setValueAtTime(d * 8 + wobble, now + t);
+                    }
+                } else {
+                    drift = style === 'emotional' ? 6 : 4;
+                    osc.detune.value = d * 8 + (Math.random() - 0.5) * drift;
+                }
 
                 osc.connect(filter);
                 osc.start(now);
@@ -417,7 +558,7 @@ export class AudioEngine {
         masterGain.connect(this.reverb);
 
         this.activeLoops.set(2, { // Beat 2 = Pad
-            stop: () => sources.forEach(s => { try { s.stop(); } catch (e) { } })
+            stop: () => sources.forEach(s => { try { s.stop(); } catch (e) { /* oscillator already stopped */ } })
         });
     }
 
@@ -503,7 +644,7 @@ export class AudioEngine {
         }
 
         this.activeLoops.set('drums', {
-            stop: () => sources.forEach(s => { try { s.stop(); } catch (e) { } })
+            stop: () => sources.forEach(s => { try { s.stop(); } catch (e) { /* oscillator already stopped */ } })
         });
     }
 
@@ -651,15 +792,18 @@ export class AudioEngine {
         }
 
         this.activeLoops.set(4, {
-            stop: () => sources.forEach(s => { try { s.stop(); } catch (e) { } })
+            stop: () => sources.forEach(s => { try { s.stop(); } catch (e) { /* oscillator already stopped */ } })
         });
     }
 
     createWoodBlock(time, pitchMult = 1.0, velocity = 1.0, isDissonant = false) {
         // Wood block: two resonant frequencies with quick decay
+        // Uses percussion ADSR envelope for timing reference
+        const percEnvelope = INSTRUMENTS.percussion.envelope;
         const baseFreq = isDissonant ? 900 : 800;
         const freq1 = baseFreq * pitchMult;
         const freq2 = freq1 * 1.5; // Harmonic
+        const noteDuration = percEnvelope.attack + percEnvelope.decay + percEnvelope.release;
 
         // Primary tone
         const osc1 = this.ctx.createOscillator();
@@ -671,12 +815,12 @@ export class AudioEngine {
         osc2.type = 'sine';
         osc2.frequency.value = freq2;
 
-        // Sharp attack, quick decay like wood
+        // Sharp attack, quick decay like wood - use ADSR envelope
         const gain1 = this.ctx.createGain();
-        gain1.gain.setValueAtTime(0.35 * velocity, time);
-        gain1.gain.exponentialRampToValueAtTime(0.01, time + 0.08);
+        this.applyADSREnvelope(gain1, time, noteDuration, percEnvelope, 0.35 * velocity);
 
         const gain2 = this.ctx.createGain();
+        // Secondary harmonic with shorter envelope
         gain2.gain.setValueAtTime(0.15 * velocity, time);
         gain2.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
 

@@ -1,12 +1,10 @@
 /**
  * Genres.js - Genre presets for One-Key Orchestra
- * 
+ *
  * Each genre defines BPM, chord progressions, drum pattern, and instrument sounds.
  */
 
-// Equal temperament helper
-const SEMITONE = Math.pow(2, 1 / 12);
-const st = (n) => Math.pow(SEMITONE, n);
+import { st } from './Instruments.js';
 
 export const GENRES = {
     pop: {

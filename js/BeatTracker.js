@@ -104,12 +104,25 @@ export class BeatTracker {
     }
 
     // Evaluate timing accuracy for a hit
+    // hitTime is always from performance.now() (milliseconds)
     evaluateTiming(hitTime) {
         if (!this.isRunning || this.startTime === null) {
             return { accuracy: 'off', nearestBeat: 1, offset: 0, barNumber: 0 };
         }
 
-        const elapsed = hitTime - this.startTime - this.totalPausedTime;
+        let elapsed;
+        // Convert to consistent milliseconds
+        if (this.audioCtx) {
+            // startTime is in AudioContext seconds, convert hitTime from performance.now to audio time
+            // We need to find the elapsed time in the audio timeline
+            // performance.now() and audioCtx.currentTime don't have a fixed relationship,
+            // so we calculate elapsed based on current audio time minus paused time
+            const audioNow = this.audioCtx.currentTime;
+            elapsed = (audioNow - this.startTime - this.totalPausedTime) * 1000; // Convert to ms
+        } else {
+            elapsed = hitTime - this.startTime - this.totalPausedTime;
+        }
+
         const beatPosition = elapsed / this.beatDuration;
 
         // Find nearest beat center
@@ -145,7 +158,14 @@ export class BeatTracker {
             return this.beatDuration;
         }
 
-        const elapsed = performance.now() - this.startTime;
+        let elapsed;
+        if (this.audioCtx) {
+            const audioNow = this.audioCtx.currentTime;
+            elapsed = (audioNow - this.startTime - this.totalPausedTime) * 1000;
+        } else {
+            elapsed = performance.now() - this.startTime - this.totalPausedTime;
+        }
+
         const beatPosition = elapsed / this.beatDuration;
         const nextBeatTime = (Math.floor(beatPosition) + 1) * this.beatDuration;
 

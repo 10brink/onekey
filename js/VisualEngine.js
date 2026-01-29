@@ -13,6 +13,7 @@ export class VisualEngine {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.animations = [];
+        this.maxAnimations = 50; // Prevent memory leak from rapid input
         this.glitchEffect = null;
         this.pulseIntensity = 0;
         this.hitFeedback = null;
@@ -20,16 +21,34 @@ export class VisualEngine {
         this.displayScore = 0; // For smooth animation
         this.streak = 0;
         this.activeInstruments = new Map(); // Track which instruments are active
+        this.dpr = window.devicePixelRatio || 1; // For Retina/HiDPI displays
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
     }
 
     resize() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
-        this.centerX = this.canvas.width / 2;
-        this.centerY = this.canvas.height / 2;
+        // Support HiDPI/Retina displays for crisp rendering
+        this.dpr = window.devicePixelRatio || 1;
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        // Set canvas buffer size (actual pixels)
+        this.canvas.width = width * this.dpr;
+        this.canvas.height = height * this.dpr;
+
+        // Set display size (CSS pixels)
+        this.canvas.style.width = width + 'px';
+        this.canvas.style.height = height + 'px';
+
+        // Scale context to match DPR
+        this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+
+        // Store logical dimensions for drawing calculations
+        this.width = width;
+        this.height = height;
+        this.centerX = width / 2;
+        this.centerY = height / 2;
     }
 
     // Main render loop - called each frame
@@ -48,10 +67,15 @@ export class VisualEngine {
 
         // Clear - mostly solid to keep ring crisp, slight trail for effects
         ctx.fillStyle = 'rgba(18, 18, 24, 0.85)';
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillRect(0, 0, this.width, this.height);
 
         // Draw background pulse
         this.drawBackgroundPulse();
+
+        // Prevent memory leak from rapid input - cap active animations
+        if (this.animations.length > this.maxAnimations) {
+            this.animations = this.animations.slice(-30);
+        }
 
         // Update and draw animations
         this.animations = this.animations.filter(anim => {
@@ -137,7 +161,7 @@ export class VisualEngine {
         // Subtle radial gradient pulse
         const gradient = ctx.createRadialGradient(
             this.centerX, this.centerY, 0,
-            this.centerX, this.centerY, this.canvas.width * 0.5
+            this.centerX, this.centerY, this.width * 0.5
         );
 
         const alpha = 0.03 + intensity * 0.05;
@@ -145,7 +169,7 @@ export class VisualEngine {
         gradient.addColorStop(1, 'rgba(212, 165, 116, 0)');
 
         ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillRect(0, 0, this.width, this.height);
     }
 
     drawBeatIndicator(beatTracker) {
@@ -450,13 +474,14 @@ export class VisualEngine {
 
         // Glitch lines
         for (let i = 0; i < 3; i++) {
-            const y = Math.random() * this.canvas.height;
-            const height = Math.random() * 5 + 2;
+            const y = Math.random() * this.height;
+            const lineHeight = Math.random() * 5 + 2;
             ctx.fillStyle = `rgba(255, 0, 0, ${0.3 * intensity})`;
-            ctx.fillRect(0, y, this.canvas.width, height);
+            ctx.fillRect(0, y, this.width, lineHeight);
         }
 
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        // Reset transform, accounting for DPR
+        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     }
 }
 
@@ -711,7 +736,7 @@ class SpiralAnimation {
 
     draw(ctx) {
         const fadeProgress = this.age / this.maxAge;
-        const basealpha = 1 - fadeProgress * 0.5;
+        const baseAlpha = 1 - fadeProgress * 0.5;
 
         for (const arm of this.arms) {
             // Draw trail
@@ -728,7 +753,7 @@ class SpiralAnimation {
                 ctx.lineWidth = this.isDissonant ? 4 : 3;
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
-                ctx.globalAlpha = basealpha * 0.6;
+                ctx.globalAlpha = baseAlpha * 0.6;
                 ctx.stroke();
             }
 
@@ -740,14 +765,14 @@ class SpiralAnimation {
                 ctx.beginPath();
                 ctx.arc(head.x, head.y, this.isDissonant ? 12 : 8, 0, Math.PI * 2);
                 ctx.fillStyle = this.color;
-                ctx.globalAlpha = basealpha * 0.3;
+                ctx.globalAlpha = baseAlpha * 0.3;
                 ctx.fill();
 
                 // Core
                 ctx.beginPath();
                 ctx.arc(head.x, head.y, this.isDissonant ? 5 : 4, 0, Math.PI * 2);
                 ctx.fillStyle = '#fff';
-                ctx.globalAlpha = basealpha;
+                ctx.globalAlpha = baseAlpha;
                 ctx.fill();
             }
         }
@@ -755,7 +780,7 @@ class SpiralAnimation {
         // Draw connecting lines between arms for dissonant
         if (this.isDissonant && this.arms.length > 1) {
             ctx.beginPath();
-            ctx.globalAlpha = basealpha * 0.2;
+            ctx.globalAlpha = baseAlpha * 0.2;
             ctx.strokeStyle = this.color;
             ctx.lineWidth = 1;
 

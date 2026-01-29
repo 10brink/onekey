@@ -2,7 +2,7 @@
 
 A browser-based musical game where you create music with a single key. Press spacebar on the beat to layer instruments — timing determines the sound.
 
-**[Play Now](https://nicktenbrink.com/games/onekey)** *(update with your actual URL)*
+**[Play Now](https://10brink.github.io/onekey/)** 
 
 ## How to Play
 
